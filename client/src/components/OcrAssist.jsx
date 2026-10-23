@@ -110,7 +110,7 @@ export default function OcrAssist({ imageUrl, onPick }) {
           {matches.results.length === 0 && <p className="hint-text">No matches found for "{matches.line}".</p>}
           {matches.truncated && (
             <p className="hint-text" style={{ color: '#e8a838' }}>
-              ⚠️ Over 30 matches found — try adding a card number or set name to narrow your search.
+              ⚠️ Over 31 matches found — try adding a card number or set name to narrow your search.
             </p>
           )}
         </div>

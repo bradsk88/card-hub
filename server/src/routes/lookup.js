@@ -10,8 +10,8 @@ function wrapLookup(searchFn) {
     if (!q) return res.status(400).json({ error: 'q required' });
     try {
       const results = await searchFn(q);
-      const truncated = results.length > 30;
-      res.json({ results: results.slice(0, 30), truncated });
+      const truncated = results.length > 31;
+      res.json({ results: results.slice(0, 31), truncated });
     } catch (e) {
       res.status(502).json({ error: e.message });
     }

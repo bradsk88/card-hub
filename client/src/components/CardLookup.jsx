@@ -68,7 +68,7 @@ export default function CardLookup({ game, onPick }) {
           {results.length === 0 && <p className="hint-text">No matches found.</p>}
           {truncated && (
             <p className="hint-text" style={{ color: '#e8a838' }}>
-              ⚠️ Over 30 matches found — try adding a card number or set name to narrow your search (e.g. "Lycanroc 166").
+              ⚠️ Over 31 matches found — try adding a card number or set name to narrow your search (e.g. "Lycanroc 166").
             </p>
           )}
         </div>
