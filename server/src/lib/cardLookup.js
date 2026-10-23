@@ -15,7 +15,7 @@ async function searchPokemon(query) {
   const res = await fetch(`${TCGDEX_BASE}/cards?name=${encodeURIComponent(query)}`, { headers: APP_HEADERS });
   if (!res.ok) throw new Error(`TCGdex search failed (${res.status})`);
   const rows = await res.json();
-  return rows.slice(0, 30).map((r) => ({
+  return rows.slice(0, 100).map((r) => ({
     source: 'tcgdex',
     id: r.id,
     name: r.name,
