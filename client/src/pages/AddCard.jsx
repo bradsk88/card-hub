@@ -33,7 +33,7 @@ export default function AddCard() {
     if (pendingImage) {
       await api.importImage(card.id, pendingImage, 'front').catch(() => {});
     }
-    navigate(`/collection/${card.id}`);
+    navigate(`/collection/${card.id}?added=1`);
   }
 
   function handlePick(result) {

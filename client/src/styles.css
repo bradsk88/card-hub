@@ -168,6 +168,8 @@ input[type="checkbox"] { width: auto; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: white; }
 .btn.primary:hover { background: var(--accent-dark); }
 .btn.danger { color: var(--danger); }
+.btn.green { background: #22c55e; border-color: #22c55e; color: white; }
+.btn.green:hover { background: #16a34a; }
 .btn.small { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
 .btn.file-upload-btn { position: relative; }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
