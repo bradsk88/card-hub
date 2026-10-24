@@ -49,7 +49,7 @@ export default function AddCard() {
   async function handleIncreaseQty(dupe, increment) {
     const newQty = (dupe.quantity || 0) + (increment || 1);
     await api.updateCard(dupe.id, { quantity: newQty });
-    navigate(`/collection/${dupe.id}`);
+    navigate(`/collection/${dupe.id}?added=1`);
   }
 
   async function handleAddVariant() {
