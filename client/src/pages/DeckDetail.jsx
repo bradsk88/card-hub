@@ -74,11 +74,9 @@ export default function DeckDetail() {
           <h2>Deck Visual</h2>
           <div className="deck-card-grid">
             {cardsWithImage.map((c) => (
-              <div key={c.deck_card_id} className="deck-card-3d" onClick={() => setLightbox({ src: c.image, alt: c.player_or_character || c.set_name })}>
-                <div className="deck-card-inner">
-                  {c.image && <img src={c.image} alt={c.player_or_character || c.set_name} loading="lazy" />}
-                  {c.deck_quantity > 1 && <span className="deck-card-qty">×{c.deck_quantity}</span>}
-                </div>
+              <div key={c.deck_card_id} className="deck-card-thumb" onClick={() => setLightbox({ src: c.image, alt: c.player_or_character || c.set_name })}>
+                {c.image && <img src={c.image} alt={c.player_or_character || c.set_name} loading="lazy" />}
+                {c.deck_quantity > 1 && <span className="deck-card-qty">×{c.deck_quantity}</span>}
               </div>
             ))}
           </div>

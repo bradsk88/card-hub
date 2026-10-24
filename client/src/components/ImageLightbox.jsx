@@ -11,7 +11,9 @@ export default function ImageLightbox({ src, alt, onClose }) {
 
   return (
     <div className="camera-modal lightbox-modal" onClick={onClose}>
-      <img className="lightbox-img" src={src} alt={alt} onClick={(e) => e.stopPropagation()} />
+      <div className="lightbox-3d-card" onClick={(e) => e.stopPropagation()}>
+        <img className="lightbox-img" src={src} alt={alt} />
+      </div>
       <button className="btn lightbox-close" onClick={onClose}>✕</button>
     </div>
   );

@@ -320,35 +320,27 @@ input[type="checkbox"] { width: auto; }
 
 .deck-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.5rem;
   padding: 0.5rem 0;
-  perspective: 1200px;
 }
-.deck-card-3d {
-  cursor: pointer;
-  perspective: 800px;
-  transform-style: preserve-3d;
-}
-.deck-card-inner {
+.deck-card-thumb {
   position: relative;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  transform-style: preserve-3d;
-  transition: transform 0.35s ease, box-shadow 0.35s ease;
-  transform: rotateY(8deg) rotateX(2deg);
-  box-shadow: 8px 6px 16px rgba(0,0,0,0.35);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.deck-card-3d:hover .deck-card-inner {
-  transform: rotateY(0deg) rotateX(0deg) scale(1.04);
-  box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+.deck-card-thumb:hover {
+  transform: scale(1.03);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
   z-index: 2;
 }
-.deck-card-inner img {
+.deck-card-thumb img {
   width: 100%;
-  height: 190px;
+  height: 160px;
   object-fit: contain;
   display: block;
   background: #000;
@@ -359,15 +351,34 @@ input[type="checkbox"] { width: auto; }
   right: 4px;
   background: rgba(0,0,0,0.75);
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 4px;
+}
+
+.lightbox-3d-card {
+  perspective: 1200px;
+  transform-style: preserve-3d;
+  animation: lightboxPopIn 0.4s ease-out;
+}
+.lightbox-3d-card img {
+  transform: rotateY(6deg) rotateX(2deg);
+  transform-style: preserve-3d;
+  transition: transform 0.4s ease;
+  box-shadow: 12px 10px 30px rgba(0,0,0,0.5);
+}
+.lightbox-3d-card:hover img {
+  transform: rotateY(0deg) rotateX(0deg) scale(1.02);
+}
+@keyframes lightboxPopIn {
+  from { transform: scale(0.85) rotateY(20deg); opacity: 0; }
+  to { transform: scale(1) rotateY(6deg); opacity: 1; }
 }
 
 @media (max-width: 640px) {
   .nav { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .main-content { padding: 1rem; }
-  .deck-card-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
-  .deck-card-inner img { height: 150px; }
+  .deck-card-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
+  .deck-card-thumb img { height: 130px; }
 }
