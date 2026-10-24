@@ -24,7 +24,14 @@ router.get('/:id', (req, res) => {
     FROM deck_cards dc JOIN cards c ON c.id = dc.card_id
     WHERE dc.deck_id = ? ORDER BY c.player_or_character
   `).all(req.params.id);
-  res.json({ ...deck, cards });
+  const cardIds = cards.map((c) => c.id);
+  const images = cardIds.length
+    ? db.prepare(`SELECT card_id, filename FROM card_images WHERE side = 'front' AND card_id IN (${cardIds.map(() => '?').join(',')})`).all(...cardIds)
+    : [];
+  const imageByCard = new Map();
+  for (const img of images) if (!imageByCard.has(img.card_id)) imageByCard.set(img.card_id, img.filename);
+  const cardsWithImages = cards.map((c) => ({ ...c, image: imageByCard.has(c.id) ? `/images/${imageByCard.get(c.id)}` : null }));
+  res.json({ ...deck, cards: cardsWithImages });
 });
 
 router.post('/', (req, res) => {

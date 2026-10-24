@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import ImageLightbox from '../components/ImageLightbox.jsx';
 import { api } from '../api.js';
 import { useLanguage } from '../i18n.jsx';
 
@@ -9,6 +10,7 @@ export default function DeckDetail() {
   const [deck, setDeck] = useState(null);
   const [allCards, setAllCards] = useState([]);
   const [addCardId, setAddCardId] = useState('');
+  const [lightbox, setLightbox] = useState(null);
 
   function load() {
     api.getDeck(id).then(setDeck);
@@ -38,6 +40,8 @@ export default function DeckDetail() {
     byCategory[c.category] = (byCategory[c.category] || 0) + (c.deck_quantity || 0);
   }
 
+  const cardsWithImage = deck.cards.filter((c) => c.image);
+
   return (
     <div>
       <div className="page-header">
@@ -64,6 +68,22 @@ export default function DeckDetail() {
           </p>
         )}
       </section>
+
+      {cardsWithImage.length > 0 && (
+        <section className="panel deck-visual">
+          <h2>Deck Visual</h2>
+          <div className="deck-card-grid">
+            {cardsWithImage.map((c) => (
+              <div key={c.deck_card_id} className="deck-card-3d" onClick={() => setLightbox({ src: c.image, alt: c.player_or_character || c.set_name })}>
+                <div className="deck-card-inner">
+                  {c.image && <img src={c.image} alt={c.player_or_character || c.set_name} loading="lazy" />}
+                  {c.deck_quantity > 1 && <span className="deck-card-qty">×{c.deck_quantity}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="panel">
         <h2>{t('decks_add_a_card')}</h2>
@@ -94,6 +114,8 @@ export default function DeckDetail() {
           {deck.cards.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem' }}>{t('decks_none_in_deck')}</td></tr>}
         </tbody>
       </table>
+
+      {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
     </div>
   );
 }
