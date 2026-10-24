@@ -221,7 +221,7 @@ input[type="checkbox"] { width: auto; }
 .dupe-final-row { justify-content: space-between; }
 
 .lightbox-modal { flex-direction: column; }
-.lightbox-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 6px; cursor: default; }
+
 .lightbox-close { position: absolute; top: 1rem; right: 1.25rem; font-size: 1.1rem; }
 .image-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .image-actions select { width: auto; }
@@ -358,22 +358,27 @@ input[type="checkbox"] { width: auto; }
 }
 
 .lightbox-3d-card {
-  perspective: 1200px;
-  transform-style: preserve-3d;
   animation: lightboxPopIn 0.4s ease-out;
+  text-align: center;
 }
 .lightbox-3d-card img {
-  transform: rotateY(6deg) rotateX(2deg);
   transform-style: preserve-3d;
-  transition: transform 0.4s ease;
   box-shadow: 12px 10px 30px rgba(0,0,0,0.5);
+  max-width: 90vw;
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 6px;
 }
-.lightbox-3d-card:hover img {
-  transform: rotateY(0deg) rotateX(0deg) scale(1.02);
+.lightbox-hint {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.8rem;
+  margin-top: 0.6rem;
+  user-select: none;
+  pointer-events: none;
 }
 @keyframes lightboxPopIn {
-  from { transform: scale(0.85) rotateY(20deg); opacity: 0; }
-  to { transform: scale(1) rotateY(6deg); opacity: 1; }
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 @media (max-width: 640px) {
