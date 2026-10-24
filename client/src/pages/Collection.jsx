@@ -23,6 +23,8 @@ export default function Collection() {
   const [views, setViews] = useState(loadSavedViews);
   const [bulkTag, setBulkTag] = useState('');
   const [shareUrl, setShareUrl] = useState(null);
+  const [decks, setDecks] = useState([]);
+  const [bulkDeckId, setBulkDeckId] = useState('');
 
   function load() {
     const params = { sort, dir };
@@ -35,6 +37,10 @@ export default function Collection() {
       setSelected(new Set());
     });
   }
+
+  useEffect(() => {
+    api.listDecks().then(setDecks).catch(() => setDecks([]));
+  }, []);
 
   useEffect(load, [q, category, status, sort, dir]);
 
@@ -66,6 +72,16 @@ export default function Collection() {
     const next = [...views.filter((v) => v.name !== name), { name, q, category, status, sort, dir }];
     setViews(next);
     persistSavedViews(next);
+  }
+
+  async function handleAddToDeck(deckId) {
+    if (!deckId || selected.size === 0) return;
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map((id) => api.addCardToDeck(deckId, id, 1)));
+    const ok = results.filter((r) => r.status === 'fulfilled').length;
+    const fail = results.length - ok;
+    alert(`Added ${ok} card(s) to deck.${fail > 0 ? ` ${fail} failed.` : ''}`);
+    load();
   }
 
   function applyView(v) {
@@ -144,6 +160,10 @@ export default function Collection() {
           </select>
           <input placeholder="Add tag..." value={bulkTag} onChange={(e) => setBulkTag(e.target.value)} style={{ width: 140 }} />
           <button className="btn small" onClick={() => { runBulk('add_tag', bulkTag); setBulkTag(''); }}>Add Tag</button>
+          <select value={bulkDeckId} onChange={(e) => { const deckId = e.target.value; if (deckId) { handleAddToDeck(deckId); setBulkDeckId(''); } }} style={{ width: 'auto' }}>
+            <option value="" disabled>Add to deck...</option>
+            {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
           <a className="btn small" href={`/api/export/labels?ids=${[...selected].join(',')}`}>🏷 Print Labels</a>
           <button className="btn small" onClick={shareSelected}>🔗 Share Selected</button>
           <button className="btn small danger" onClick={() => runBulk('delete')}>Delete</button>
