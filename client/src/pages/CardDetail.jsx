@@ -150,7 +150,12 @@ export default function CardDetail() {
       <div className="page-header">
         <h1>{card.player_or_character || card.set_name || `Card #${card.id}`}</h1>
         <div className="cta-row">
-          {justAdded && <button className="btn green" onClick={() => navigate('/collection/new')}>+ Add Another</button>}
+          {justAdded && (
+            <button className="btn green" onClick={() => {
+              const GAME_KEYS = { 'Pokemon': 'pokemon', 'Yu-Gi-Oh': 'yugioh', 'Magic: The Gathering': 'magic' };
+              navigate('/collection/new', { state: { gameType: GAME_KEYS[card.sport_or_game] } });
+            }}>+ Add Another</button>
+          )}
           <button className="btn" onClick={handleClone}>⧉ Clone</button>
           <a className="btn" href={`/api/export/labels?ids=${card.id}`}>🏷 Print Label</a>
           <button className="btn danger" onClick={handleDelete}>Delete</button>

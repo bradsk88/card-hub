@@ -16,7 +16,7 @@ export default function AddCard() {
   const [prefill, setPrefill] = useState(() => location.state?.prefill || null);
   const [formKey, setFormKey] = useState(0);
   const [pendingImage, setPendingImage] = useState(null);
-  const [showLookup, setShowLookup] = useState(null); // 'pokemon' | 'yugioh' | 'magic' | null
+  const [showLookup, setShowLookup] = useState(() => location.state?.gameType || null); // 'pokemon' | 'yugioh' | 'magic' | null
 
   async function handleSubmit(form) {
     if (form.set_name || form.player_or_character) {
