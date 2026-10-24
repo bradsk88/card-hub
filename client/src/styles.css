@@ -381,6 +381,102 @@ input[type="checkbox"] { width: auto; }
   to { transform: scale(1); opacity: 1; }
 }
 
+.lightbox-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 95vw;
+}
+.lightbox-related {
+  width: 100%;
+  max-width: 800px;
+}
+.lightbox-related-label {
+  color: rgba(255,255,255,0.55);
+  font-size: 0.75rem;
+  margin-bottom: 0.35rem;
+  user-select: none;
+}
+.lightbox-related-strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+}
+.lightbox-related-card {
+  flex: 0 0 auto;
+  width: 90px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.35rem;
+}
+.lightbox-related-card img {
+  width: 100%;
+  height: 110px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 3px;
+  cursor: pointer;
+  display: block;
+}
+.lightbox-related-noimg {
+  width: 100%;
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 1.2rem;
+  background: var(--panel-2);
+  border-radius: 3px;
+}
+.lightbox-related-card .btn.small {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.lightbox-image-tabs {
+  display: flex;
+  gap: 0.35rem;
+}
+.lightbox-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  width: 64px;
+}
+.lightbox-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.lightbox-tab img {
+  width: 100%;
+  height: 48px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 3px;
+  display: block;
+}
+.lightbox-tab span {
+  font-size: 0.65rem;
+  text-transform: capitalize;
+}
+
 @media (max-width: 640px) {
   .nav { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
   .main-content { padding: 1rem; }

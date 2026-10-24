@@ -200,7 +200,17 @@ export default function CardDetail() {
 
       {showCamera && <CameraCapture onCapture={handleCapture} onClose={() => setShowCamera(false)} />}
       {showScanner && <BarcodeScanner onDetect={handleBarcodeDetected} onClose={() => setShowScanner(false)} />}
-      {lightboxImg && <ImageLightbox src={lightboxImg.src} alt={lightboxImg.alt} onClose={() => setLightboxImg(null)} />}
+      {lightboxImg && (
+        <ImageLightbox
+          src={lightboxImg.src}
+          alt={lightboxImg.alt}
+          images={card.images || []}
+          onClose={() => setLightboxImg(null)}
+          cardId={Number(id)}
+          related={similar}
+          onNavigate={(cid) => { setLightboxImg(null); navigate(`/collection/${cid}`); }}
+        />
+      )}
 
       <section className="panel">
         <h2>{t('quick_actions_title')}</h2>

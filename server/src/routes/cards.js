@@ -109,7 +109,15 @@ router.get('/:id/similar', (req, res) => {
     )
     ORDER BY updated_at DESC LIMIT 20
   `).all({ id: card.id, userId: req.session.userId, player: card.player_or_character, set_name: card.set_name, year: card.year, manufacturer: card.manufacturer });
-  res.json(rows);
+  const ids = rows.map((r) => r.id);
+  const images = ids.length
+    ? db.prepare(`SELECT card_id, filename FROM card_images WHERE card_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`).all(...ids)
+    : [];
+  const firstImageByCard = new Map();
+  for (const img of images) {
+    if (!firstImageByCard.has(img.card_id)) firstImageByCard.set(img.card_id, img.filename);
+  }
+  res.json(rows.map((r) => ({ ...r, image: firstImageByCard.has(r.id) ? `/images/${firstImageByCard.get(r.id)}` : null })));
 });
 
 router.post('/', (req, res) => {
