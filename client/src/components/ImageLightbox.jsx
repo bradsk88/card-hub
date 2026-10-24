@@ -2,15 +2,15 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 /*
  * Interactive 3D card spinner for the deck/lightbox view.
- * Grab the image, drag to spin, release to throw with inertia.
+ * Grab the image horizontally to spin around the Y axis.
  * Shows a strip of related (same-name) cards below the main image.
  * If released within 10° of front-facing, snaps smoothly back.
- * Click the dark backdrop or the ✕ button to close.
+ * Only closes when you do a clean click-release on the dark backdrop.
  */
 export default function ImageLightbox({ src, alt, images = [], onClose, cardId, related = [], onNavigate }) {
   const rafRef = useRef(null);
+  const suppressClose = useRef(false);
 
-  // Which image tab is active (only relevant when images.length > 1)
   const initialIndex = images.length > 0
     ? Math.max(0, images.findIndex((img) => `/images/${img.filename}` === src))
     : 0;
@@ -19,24 +19,20 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
   const activeSrc = active ? `/images/${active.filename}` : src;
   const activeAlt = active ? active.side : alt;
 
-  const [rotation, setRotation] = useState({ y: 6, x: 2 });
-  const rotationRef = useRef({ y: 6, x: 2 });
+  const [rotation, setRotation] = useState({ y: 6 });
+  const rotationRef = useRef({ y: 6 });
   useEffect(() => { rotationRef.current = rotation; }, [rotation]);
 
   const [isDragging, setIsDragging] = useState(false);
 
-  // Physics state stored in refs to avoid re-render churn during rAF
   const physics = useRef({
-    velY: 0,
-    velX: 0,
+    vel: 0,
     lastX: 0,
-    lastY: 0,
     lastTime: 0,
     friction: 0.96,
     minVel: 0.05,
+    didMove: false,
   });
-
-  const filteredRel = related.filter((r) => r.id !== cardId);
 
   const stopAnim = useCallback(() => {
     if (rafRef.current) {
@@ -45,22 +41,18 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     }
   }, []);
 
-  const startSnap = useCallback((target) => {
+  const startSnap = useCallback((targetY) => {
     stopAnim();
     const loop = () => {
-      const curr = rotationRef.current;
-      const dy = target.y - curr.y;
-      const dx = target.x - curr.x;
-      if (Math.abs(dy) < 0.06 && Math.abs(dx) < 0.06) {
-        rotationRef.current = target;
-        setRotation(target);
+      const currY = rotationRef.current.y;
+      const d = targetY - currY;
+      if (Math.abs(d) < 0.06) {
+        rotationRef.current = { y: targetY };
+        setRotation({ y: targetY });
         rafRef.current = null;
         return;
       }
-      const next = {
-        y: curr.y + dy * 0.10,
-        x: curr.x + dx * 0.10,
-      };
+      const next = { y: currY + d * 0.10 };
       rotationRef.current = next;
       setRotation(next);
       rafRef.current = requestAnimationFrame(loop);
@@ -72,19 +64,15 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     stopAnim();
     const loop = () => {
       const p = physics.current;
-      if (Math.abs(p.velY) < p.minVel && Math.abs(p.velX) < p.minVel) {
-        p.velY = 0;
-        p.velX = 0;
+      if (Math.abs(p.vel) < p.minVel) {
+        p.vel = 0;
         rafRef.current = null;
         return;
       }
-      const curr = rotationRef.current;
-      const next = { y: curr.y + p.velY, x: curr.x + p.velX };
-      next.x = Math.max(-30, Math.min(30, next.x));
+      const next = { y: rotationRef.current.y + p.vel };
       rotationRef.current = next;
       setRotation(next);
-      p.velY *= p.friction;
-      p.velX *= p.friction;
+      p.vel *= p.friction;
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -94,63 +82,53 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     stopAnim();
     setIsDragging(true);
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     const p = physics.current;
     p.lastX = clientX;
-    p.lastY = clientY;
     p.lastTime = performance.now();
-    p.velY = 0;
-    p.velX = 0;
+    p.vel = 0;
+    p.didMove = false;
+    suppressClose.current = false;
     e.preventDefault();
   }, [stopAnim]);
 
   const onPointerMove = useCallback((e) => {
     if (!isDragging) return;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     const now = performance.now();
     const p = physics.current;
 
     const dx = clientX - p.lastX;
-    const dy = clientY - p.lastY;
     const dt = now - p.lastTime;
-
-    // Sensitivity: horizontal drag spins around Y; vertical drag tilts X
     const sensitivity = 0.35;
     const deltaY = dx * sensitivity;
-    const deltaX = -dy * sensitivity * 0.5;
 
-    if (dt > 0) {
-      p.velY = (deltaY / dt) * 16; // scale to ~60fps
-      p.velX = (deltaX / dt) * 16;
-    }
+    if (Math.abs(dx) > 2) p.didMove = true;
 
-    const next = {
-      y: rotationRef.current.y + deltaY,
-      x: rotationRef.current.x + deltaX,
-    };
-    next.x = Math.max(-30, Math.min(30, next.x));
+    if (dt > 0) p.vel = (deltaY / dt) * 16;
+
+    const next = { y: rotationRef.current.y + deltaY };
     rotationRef.current = next;
     setRotation(next);
 
     p.lastX = clientX;
-    p.lastY = clientY;
     p.lastTime = now;
     e.preventDefault();
   }, [isDragging]);
 
   const onPointerUp = useCallback(() => {
     setIsDragging(false);
-    const curr = rotationRef.current;
-    const nearestY = Math.round(curr.y / 360) * 360;
-    const distY = Math.abs(curr.y - nearestY);
-    const distX = Math.abs(curr.x);
+    const p = physics.current;
+    const curr = rotationRef.current.y;
+    const nearest = Math.round(curr / 360) * 360;
+    const dist = Math.abs(curr - nearest);
 
-    if (distY <= 10 && distX <= 10) {
-      startSnap({ y: nearestY, x: 0 });
-    } else {
-      startInertia();
+    if (p.didMove) {
+      suppressClose.current = true;
+      setTimeout(() => { suppressClose.current = false; }, 60);
     }
+
+    if (dist <= 10) startSnap(nearest);
+    else startInertia();
   }, [startInertia, startSnap]);
 
   useEffect(() => {
@@ -162,7 +140,6 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     };
   }, [onClose, stopAnim]);
 
-  // Prevent scrolling while dragging inside lightbox
   useEffect(() => {
     if (!isDragging) return;
     const preventScroll = (e) => e.preventDefault();
@@ -170,7 +147,6 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     return () => window.removeEventListener('touchmove', preventScroll);
   }, [isDragging]);
 
-  // Global move/up listeners so drag works even if cursor leaves the element
   useEffect(() => {
     if (!isDragging) return;
     window.addEventListener('mousemove', onPointerMove);
@@ -187,15 +163,19 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
 
   const cursor = isDragging ? 'grabbing' : 'grab';
 
+  function handleBackdropClick() {
+    if (suppressClose.current) return;
+    onClose();
+  }
+
   return (
-    <div className="camera-modal lightbox-modal" onClick={onClose}>
-      <div className="lightbox-layout">
+    <div className="camera-modal lightbox-modal" onClick={handleBackdropClick}>
+      <div className="lightbox-layout" onClick={(e) => e.stopPropagation()}>
         <div
           className="lightbox-3d-card"
           style={{ cursor, touchAction: 'none' }}
           onMouseDown={onPointerDown}
           onTouchStart={onPointerDown}
-          onClick={(e) => e.stopPropagation()}
         >
           <img
             className="lightbox-img"
@@ -203,7 +183,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
             alt={activeAlt}
             draggable={false}
             style={{
-              transform: `perspective(1200px) rotateY(${rotation.y.toFixed(2)}deg) rotateX(${rotation.x.toFixed(2)}deg)`,
+              transform: `perspective(1200px) rotateY(${rotation.y.toFixed(2)}deg)`,
               transition: isDragging ? 'none' : 'transform 0.1s ease-out',
               userSelect: 'none',
               WebkitUserSelect: 'none',
@@ -213,7 +193,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
         </div>
 
         {images.length > 1 && (
-          <div className="lightbox-image-tabs" onClick={(e) => e.stopPropagation()}>
+          <div className="lightbox-image-tabs">
             {images.map((img, i) => (
               <button
                 key={img.id}
@@ -228,11 +208,11 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
           </div>
         )}
 
-        {filteredRel.length > 0 && (
-          <div className="lightbox-related" onClick={(e) => e.stopPropagation()}>
+        {related.filter((r) => r.id !== cardId).length > 0 && (
+          <div className="lightbox-related">
             <p className="lightbox-related-label">Other versions in collection:</p>
             <div className="lightbox-related-strip">
-              {filteredRel.map((r) => (
+              {related.filter((r) => r.id !== cardId).map((r) => (
                 <div key={r.id} className="lightbox-related-card">
                   {r.image ? (
                     <img
@@ -244,16 +224,14 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
                   ) : (
                     <div className="lightbox-related-noimg">?</div>
                   )}
-                  <button className="btn small" onClick={() => onNavigate(r.id)}>
-                    View
-                  </button>
+                  <button className="btn small" onClick={() => onNavigate(r.id)}>View</button>
                 </div>
               ))}
             </div>
           </div>
         )}
       </div>
-      <button className="btn lightbox-close" onClick={onClose}>✕</button>
+      <button className="btn lightbox-close" onClick={(e) => { e.stopPropagation(); onClose(); }}>✕</button>
     </div>
   );
 }
