@@ -1,18 +1,29 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 
 /*
- * Interactive 3D card spinner for the deck/lightbox view.
- * Grab the image horizontally to spin around the Y axis.
- * Pokemon cards show a real card-back design when spun around.
- * Shows a strip of related (same-name) cards below the main image.
- * If released within 10° of front-facing, snaps smoothly back.
- * Only closes when you do a clean click-release on the dark backdrop.
+ * Polished interactive 3D card spinner.
+ *
+ * Conventions followed:
+ *  - Flat Y-axis rotation only (cards spin on a vertical axis)
+ *  - Velocity-based X tilt during throws (bottom tips into the motion)
+ *  - Spring physics for face-snaps (slight overshoot then settle)
+ *  - Dynamic shadow follows rotation angle
+ *  - Grab feedback: card lifts and scales up
+ *  - No arbitrary idle timers; snap only on release near a face
+ *  - Pokemon cards show real card-back when spun past 90°
  */
-export default function ImageLightbox({ src, alt, images = [], onClose, cardId, related = [], onNavigate, pokeBack = false }) {
+export default function ImageLightbox({
+  src,
+  alt,
+  images = [],
+  onClose,
+  cardId,
+  related = [],
+  onNavigate,
+  pokeBack = false,
+}) {
   const rafRef = useRef(null);
   const suppressClose = useRef(false);
-  const idleTimerRef = useRef(null);
-  const IDLE_MS = 2000;
 
   const initialIndex = images.length > 0
     ? Math.max(0, images.findIndex((img) => `/images/${img.filename}` === src))
@@ -22,8 +33,8 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
   const activeSrc = active ? `/images/${active.filename}` : src;
   const activeAlt = active ? active.side : alt;
 
-  const [rotation, setRotation] = useState({ y: 6 });
-  const rotationRef = useRef({ y: 6 });
+  const [rotation, setRotation] = useState({ y: 0 });
+  const rotationRef = useRef({ y: 0 });
   useEffect(() => { rotationRef.current = rotation; }, [rotation]);
 
   const [isDragging, setIsDragging] = useState(false);
@@ -32,8 +43,6 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     vel: 0,
     lastX: 0,
     lastTime: 0,
-    friction: 0.96,
-    minVel: 0.05,
     didMove: false,
   });
 
@@ -44,27 +53,24 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     }
   }, []);
 
-  function resetIdleTimer() {
-    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
-    idleTimerRef.current = setTimeout(() => {
-      const curr = rotationRef.current.y;
-      const nearest = Math.round(curr / 360) * 360;
-      startSnap(nearest);
-    }, IDLE_MS);
-  }
-
+  // Spring snap: Hooke's law with damping for a satisfying settle
   const startSnap = useCallback((targetY) => {
     stopAnim();
+    const STIFFNESS = 0.10;
+    const DAMPING = 0.82;
+    let vel = 0;
     const loop = () => {
-      const currY = rotationRef.current.y;
-      const d = targetY - currY;
-      if (Math.abs(d) < 0.06) {
+      const curr = rotationRef.current.y;
+      const d = targetY - curr;
+      if (Math.abs(d) < 0.05 && Math.abs(vel) < 0.05) {
         rotationRef.current = { y: targetY };
         setRotation({ y: targetY });
         rafRef.current = null;
         return;
       }
-      const next = { y: currY + d * 0.10 };
+      vel += d * STIFFNESS;
+      vel *= DAMPING;
+      const next = { y: curr + vel };
       rotationRef.current = next;
       setRotation(next);
       rafRef.current = requestAnimationFrame(loop);
@@ -72,23 +78,28 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     rafRef.current = requestAnimationFrame(loop);
   }, [stopAnim]);
 
+  // Heavier inertia: cards feel weightier than the old 0.96
   const startInertia = useCallback(() => {
     stopAnim();
+    const FRICTION = 0.92;
+    const MIN_VEL = 0.15;
     const loop = () => {
       const p = physics.current;
-      if (Math.abs(p.vel) < p.minVel) {
+      if (Math.abs(p.vel) < MIN_VEL) {
         p.vel = 0;
-        rafRef.current = null;
+        // Inertia finished — snap to nearest face
+        const nearest = Math.round(rotationRef.current.y / 360) * 360;
+        startSnap(nearest);
         return;
       }
       const next = { y: rotationRef.current.y + p.vel };
       rotationRef.current = next;
       setRotation(next);
-      p.vel *= p.friction;
+      p.vel *= FRICTION;
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
-  }, [stopAnim]);
+  }, [stopAnim, startSnap]);
 
   const onPointerDown = useCallback((e) => {
     stopAnim();
@@ -100,7 +111,6 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     p.vel = 0;
     p.didMove = false;
     suppressClose.current = false;
-    resetIdleTimer();
     e.preventDefault();
   }, [stopAnim]);
 
@@ -112,7 +122,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
 
     const dx = clientX - p.lastX;
     const dt = now - p.lastTime;
-    const sensitivity = 0.35;
+    const sensitivity = 0.40;
     const deltaY = dx * sensitivity;
 
     if (Math.abs(dx) > 2) p.didMove = true;
@@ -125,7 +135,6 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
 
     p.lastX = clientX;
     p.lastTime = now;
-    resetIdleTimer();
     e.preventDefault();
   }, [isDragging]);
 
@@ -138,28 +147,27 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
 
     if (p.didMove) {
       suppressClose.current = true;
-      setTimeout(() => { suppressClose.current = false; }, 60);
+      setTimeout(() => { suppressClose.current = false; }, 80);
     }
 
-    if (dist <= 10) {
+    if (!p.didMove) {
+      // Clean click, no drag — leave rotation alone
+    } else if (dist <= 12) {
       startSnap(nearest);
-    } else if (Math.abs(p.vel) < p.minVel) {
-      // Released too slowly to carry inertia — snap to nearest front-facing rotation
+    } else if (Math.abs(p.vel) < 0.3) {
+      // Too slow to throw — snap to nearest face
       startSnap(nearest);
     } else {
       startInertia();
     }
-    resetIdleTimer();
   }, [startInertia, startSnap]);
 
   useEffect(() => {
-    resetIdleTimer();
-    function onKey(e) { if (e.key === 'Escape') onClose(); }
+    function onKey(ev) { if (ev.key === 'Escape') onClose(); }
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       stopAnim();
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, [onClose, stopAnim]);
 
@@ -191,14 +199,22 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     onClose();
   }
 
-  // Normalize rotation to 0-360 for deciding which face is visible
   const normY = ((rotation.y % 360) + 360) % 360;
   const showBackFace = pokeBack && (normY > 90 && normY < 270);
 
-  // Subtle X-axis swirl: bottom forward, top back as the card spins
-  // Peaks at 45°/135°/225°/315° (halfway between faces)
-  const yRad = (rotation.y * Math.PI) / 180;
-  const swirlX = Math.sin(2 * yRad) * 5; // ±5° max
+  // Velocity-based X tilt: fast throws make the card lean into the motion
+  // Max ±8°, fades out as velocity drops
+  const vel = physics.current.vel;
+  const tiltX = isDragging
+    ? Math.max(-8, Math.min(8, vel * 1.5))
+    : Math.max(-4, Math.min(4, vel * 1.2));
+
+  // Dynamic shadow based on rotation
+  const shadowAngle = (normY - 180) * (Math.PI / 180);
+  const shadowX = -Math.sin(shadowAngle) * 24;
+  const shadowBlur = 24 + Math.abs(Math.sin(normY * Math.PI / 180)) * 20;
+  const shadowOpacity = 0.45 - Math.abs(Math.sin(normY * Math.PI / 180)) * 0.15;
+  const dynamicShadow = `${shadowX.toFixed(1)}px 12px ${shadowBlur.toFixed(1)}px rgba(0,0,0,${shadowOpacity.toFixed(2)})`;
 
   return (
     <div className="camera-modal lightbox-modal" onClick={handleBackdropClick}>
@@ -212,8 +228,9 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
           <div
             className="flip-card"
             style={{
-              transform: `rotateY(${rotation.y.toFixed(2)}deg) rotateX(${swirlX.toFixed(2)}deg)`,
-              transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+              transform: `perspective(1200px) rotateY(${rotation.y.toFixed(2)}deg) rotateX(${tiltX.toFixed(2)}deg) scale(${isDragging ? 1.05 : 1})`,
+              transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              boxShadow: dynamicShadow,
             }}
           >
             <div className="flip-card-front">
@@ -221,10 +238,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
                 src={activeSrc}
                 alt={activeAlt}
                 draggable={false}
-                style={{
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                }}
+                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
               />
             </div>
             {pokeBack && (
@@ -233,15 +247,11 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
                   src="/card-back.svg"
                   alt="Card back"
                   draggable={false}
-                  style={{
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                  }}
+                  style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
                 />
               </div>
             )}
           </div>
-          <p className="lightbox-hint">{isDragging ? '' : 'Click & drag to spin'}</p>
         </div>
 
         {images.length > 1 && (
@@ -250,7 +260,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
               <button
                 key={img.id}
                 className={`lightbox-tab ${i === activeIndex ? 'active' : ''}`}
-                onClick={() => { setActiveIndex(i); resetIdleTimer(); }}
+                onClick={() => setActiveIndex(i)}
                 title={img.side}
               >
                 <img src={`/images/${img.filename}`} alt={img.side} />
