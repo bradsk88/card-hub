@@ -195,9 +195,10 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
   const normY = ((rotation.y % 360) + 360) % 360;
   const showBackFace = pokeBack && (normY > 90 && normY < 270);
 
-  // Subtle Z-axis swirl: peaks at 45°/135°/225°/315° (halfway between faces)
+  // Subtle X-axis swirl: bottom forward, top back as the card spins
+  // Peaks at 45°/135°/225°/315° (halfway between faces)
   const yRad = (rotation.y * Math.PI) / 180;
-  const swirlZ = Math.sin(2 * yRad) * 5; // ±5° max
+  const swirlX = Math.sin(2 * yRad) * 5; // ±5° max
 
   return (
     <div className="camera-modal lightbox-modal" onClick={handleBackdropClick}>
@@ -211,7 +212,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
           <div
             className="flip-card"
             style={{
-              transform: `rotateY(${rotation.y.toFixed(2)}deg) rotateZ(${swirlZ.toFixed(2)}deg)`,
+              transform: `rotateY(${rotation.y.toFixed(2)}deg) rotateX(${swirlX.toFixed(2)}deg)`,
               transition: isDragging ? 'none' : 'transform 0.1s ease-out',
             }}
           >
