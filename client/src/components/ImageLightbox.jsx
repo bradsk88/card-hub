@@ -11,6 +11,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 export default function ImageLightbox({ src, alt, images = [], onClose, cardId, related = [], onNavigate, pokeBack = false }) {
   const rafRef = useRef(null);
   const suppressClose = useRef(false);
+  const idleTimerRef = useRef(null);
+  const IDLE_MS = 2000;
 
   const initialIndex = images.length > 0
     ? Math.max(0, images.findIndex((img) => `/images/${img.filename}` === src))
@@ -41,6 +43,15 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
       rafRef.current = null;
     }
   }, []);
+
+  function resetIdleTimer() {
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      const curr = rotationRef.current.y;
+      const nearest = Math.round(curr / 360) * 360;
+      startSnap(nearest);
+    }, IDLE_MS);
+  }
 
   const startSnap = useCallback((targetY) => {
     stopAnim();
@@ -89,6 +100,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     p.vel = 0;
     p.didMove = false;
     suppressClose.current = false;
+    resetIdleTimer();
     e.preventDefault();
   }, [stopAnim]);
 
@@ -113,6 +125,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
 
     p.lastX = clientX;
     p.lastTime = now;
+    resetIdleTimer();
     e.preventDefault();
   }, [isDragging]);
 
@@ -136,14 +149,17 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     } else {
       startInertia();
     }
+    resetIdleTimer();
   }, [startInertia, startSnap]);
 
   useEffect(() => {
+    resetIdleTimer();
     function onKey(e) { if (e.key === 'Escape') onClose(); }
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       stopAnim();
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
   }, [onClose, stopAnim]);
 
@@ -229,7 +245,7 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
               <button
                 key={img.id}
                 className={`lightbox-tab ${i === activeIndex ? 'active' : ''}`}
-                onClick={() => setActiveIndex(i)}
+                onClick={() => { setActiveIndex(i); resetIdleTimer(); }}
                 title={img.side}
               >
                 <img src={`/images/${img.filename}`} alt={img.side} />

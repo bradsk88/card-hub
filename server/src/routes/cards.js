@@ -104,11 +104,12 @@ router.get('/:id/similar', (req, res) => {
   const rows = db.prepare(`
     SELECT * FROM cards
     WHERE id != @id AND user_id = @userId AND (
-      (player_or_character IS NOT NULL AND player_or_character = @player) OR
-      (set_name IS NOT NULL AND set_name = @set_name AND year = @year AND manufacturer = @manufacturer)
+      (player_or_character IS NOT NULL AND LOWER(TRIM(player_or_character)) = LOWER(TRIM(@player))) OR
+      (set_name IS NOT NULL AND LOWER(TRIM(set_name)) = LOWER(TRIM(@set_name))) OR
+      (COALESCE(year,'') = COALESCE(@year,'') AND COALESCE(manufacturer,'') = COALESCE(@manufacturer,'') AND set_name IS NOT NULL)
     )
     ORDER BY updated_at DESC LIMIT 20
-  `).all({ id: card.id, userId: req.session.userId, player: card.player_or_character, set_name: card.set_name, year: card.year, manufacturer: card.manufacturer });
+  `).all({ id: card.id, userId: req.session.userId, player: card.player_or_character || '', set_name: card.set_name || '', year: card.year || '', manufacturer: card.manufacturer || '' });
   const ids = rows.map((r) => r.id);
   const images = ids.length
     ? db.prepare(`SELECT card_id, filename FROM card_images WHERE card_id IN (${ids.map(() => '?').join(',')}) ORDER BY id`).all(...ids)
