@@ -208,6 +208,7 @@ export default function CardDetail() {
           onClose={() => setLightboxImg(null)}
           cardId={Number(id)}
           related={similar}
+          pokeBack={card && /Pokemon/i.test(card.sport_or_game || '')}
           onNavigate={(cid) => { setLightboxImg(null); navigate(`/collection/${cid}`); }}
         />
       )}
