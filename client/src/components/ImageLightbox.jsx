@@ -2,8 +2,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api.js';
 
 /*
- * Smooth 3D card spinner — transforms are written directly to the DOM
- * during drag/animation to avoid React re-render jitter.
+ * Smooth 3D card spinner.
+ *
+ * Architecture:
+ *  - pointermove only records into a buffer (no DOM writes).
+ *  - A single requestAnimationFrame loop handles all rendering,
+ *    aligned to the display refresh cycle.
+ *  - No React state during drag; transforms written via ref.
  */
 export default function ImageLightbox({
   src,
@@ -41,14 +46,19 @@ export default function ImageLightbox({
   const activeAlt = active ? active.side : baseAlt;
 
   const rotationRef = useRef({ y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingState, setIsDraggingState] = useState(false);
+  const isDraggingRef = useRef(false);
   const [loadingRelatedId, setLoadingRelatedId] = useState(null);
 
-  const physics = useRef({
+  // Physics buffer — written by pointermove, read by rAF loop
+  const buf = useRef({
     vel: 0,
     lastX: 0,
     lastTime: 0,
     didMove: false,
+    targetY: null,    // when snapping
+    snapVel: 0,
+    mode: 'idle',     // 'idle' | 'drag' | 'inertia' | 'snap'
   });
 
   const stopAnim = useCallback(() => {
@@ -58,78 +68,158 @@ export default function ImageLightbox({
     }
   }, []);
 
-  /* ── Direct DOM transform helper (no React state) ── */
-  function applyTransform(dragging, overrideVel) {
+  /* ── Render loop: single rAF, reads buf, writes DOM ── */
+  function renderFrame() {
     const el = flipCardRef.current;
-    if (!el) return;
+    if (!el) {
+      rafRef.current = requestAnimationFrame(renderFrame);
+      return;
+    }
 
+    const b = buf.current;
+
+    if (b.mode === 'snap') {
+      const curr = rotationRef.current.y;
+      const d = b.targetY - curr;
+      const STIFFNESS = 0.08;
+      const DAMPING = 0.80;
+      if (Math.abs(d) < 0.05 && Math.abs(b.snapVel) < 0.05) {
+        rotationRef.current = { y: b.targetY };
+        b.mode = 'idle';
+        b.snapVel = 0;
+      } else {
+        b.snapVel += d * STIFFNESS;
+        b.snapVel *= DAMPING;
+        rotationRef.current = { y: curr + b.snapVel };
+      }
+    }
+
+    if (b.mode === 'inertia') {
+      const FRICTION = 0.955;
+      if (Math.abs(b.vel) < 0.12) {
+        b.vel = 0;
+        b.targetY = Math.round(rotationRef.current.y / 360) * 360;
+        b.snapVel = 0;
+        b.mode = 'snap';
+      } else {
+        rotationRef.current = { y: rotationRef.current.y + b.vel };
+        b.vel *= FRICTION;
+      }
+    }
+
+    // Build transform
     const y = rotationRef.current.y;
     const normY = ((y % 360) + 360) % 360;
-    const vel = overrideVel !== undefined ? overrideVel : physics.current.vel;
-    const tiltX = dragging
-      ? Math.max(-8, Math.min(8, vel * 1.5))
-      : Math.max(-4, Math.min(4, vel * 1.2));
+    const dragging = b.mode === 'drag';
 
-    const shadowAngle = (normY - 180) * (Math.PI / 180);
-    const shadowX = -Math.sin(shadowAngle) * 24;
-    const shadowBlur = 24 + Math.abs(Math.sin(normY * Math.PI / 180)) * 20;
-    const shadowOpacity = 0.45 - Math.abs(Math.sin(normY * Math.PI / 180)) * 0.15;
-    const shadow = `${shadowX.toFixed(1)}px 12px ${shadowBlur.toFixed(1)}px rgba(0,0,0,${shadowOpacity.toFixed(2)})`;
+    // Smoothed tilt: low-pass on velocity to kill finger jitter
+    const v = b.vel;
+    const tiltTarget = dragging ? Math.max(-7, Math.min(7, v * 1.2)) : Math.max(-3, Math.min(3, v * 0.8));
+    // Simple exponential smoothing — the ref carries the smoothed value
+    if (!buf.current._tilt) buf.current._tilt = 0;
+    buf.current._tilt += (tiltTarget - buf.current._tilt) * 0.25;
+    const tiltX = buf.current._tilt;
 
-    const scale = dragging ? 1.05 : 1;
-    const transition = dragging
-      ? 'none'
-      : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.35s ease';
+    // Cheaper shadow (no sin per frame)
+    const edge = Math.abs(normY - 180) / 180; // 0 at front/back, 1 at 90°
+    const shadowX = (normY < 180 ? -1 : 1) * edge * 20;
+    const shadowBlur = 20 + edge * 16;
+    const shadowAlpha = 0.35 + edge * 0.10;
+    const shadow = `${shadowX.toFixed(1)}px 14px ${shadowBlur.toFixed(0)}px rgba(0,0,0,${shadowAlpha.toFixed(2)})`;
 
-    el.style.transition = transition;
-    el.style.transform = `perspective(1200px) rotateY(${y.toFixed(2)}deg) rotateX(${tiltX.toFixed(2)}deg) scale(${scale})`;
+    const scale = dragging ? 1.04 : 1;
+
+    el.style.transform = `perspective(1400px) rotateY(${y.toFixed(2)}deg) rotateX(${tiltX.toFixed(2)}deg) scale(${scale})`;
     el.style.boxShadow = shadow;
+
+    const stillAnimating = b.mode !== 'idle';
+    if (stillAnimating) {
+      rafRef.current = requestAnimationFrame(renderFrame);
+    } else {
+      rafRef.current = null;
+      // Settle state with CSS transition for any final nudges
+      el.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.3s ease';
+    }
   }
 
-  const startSnap = useCallback((targetY) => {
+  function startRenderLoop() {
+    if (!rafRef.current) {
+      const el = flipCardRef.current;
+      if (el) el.style.transition = 'none';
+      rafRef.current = requestAnimationFrame(renderFrame);
+    }
+  }
+
+  /* ── Input handlers: write only to buffer ── */
+  const onPointerDown = useCallback((e) => {
     stopAnim();
-    const STIFFNESS = 0.10;
-    const DAMPING = 0.82;
-    let vel = 0;
-    const loop = () => {
-      const curr = rotationRef.current.y;
-      const d = targetY - curr;
-      if (Math.abs(d) < 0.05 && Math.abs(vel) < 0.05) {
-        rotationRef.current = { y: targetY };
-        applyTransform(false, 0);
-        rafRef.current = null;
-        return;
-      }
-      vel += d * STIFFNESS;
-      vel *= DAMPING;
-      const next = { y: curr + vel };
-      rotationRef.current = { y: next.y };
-      applyTransform(false, vel);
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
+    isDraggingRef.current = true;
+    setIsDraggingState(true);
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const b = buf.current;
+    b.lastX = clientX;
+    b.lastTime = performance.now();
+    b.vel = 0;
+    b.didMove = false;
+    b.mode = 'drag';
+    suppressClose.current = false;
+    startRenderLoop();
+    e.preventDefault();
   }, [stopAnim]);
 
-  const startInertia = useCallback(() => {
-    stopAnim();
-    const FRICTION = 0.92;
-    const MIN_VEL = 0.15;
-    const loop = () => {
-      const p = physics.current;
-      if (Math.abs(p.vel) < MIN_VEL) {
-        p.vel = 0;
-        const nearest = Math.round(rotationRef.current.y / 360) * 360;
-        startSnap(nearest);
-        return;
-      }
-      const next = { y: rotationRef.current.y + p.vel };
-      rotationRef.current = { y: next.y };
-      applyTransform(false, p.vel);
-      p.vel *= FRICTION;
-      rafRef.current = requestAnimationFrame(loop);
-    };
-    rafRef.current = requestAnimationFrame(loop);
-  }, [stopAnim, startSnap]);
+  const onPointerMove = useCallback((e) => {
+    if (!isDraggingRef.current) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const now = performance.now();
+    const b = buf.current;
+
+    const dx = clientX - b.lastX;
+    const dt = now - b.lastTime;
+    const sensitivity = 0.30; // slightly lower for smoother feel
+    const deltaRot = dx * sensitivity;
+
+    if (Math.abs(dx) > 2) b.didMove = true;
+    if (dt > 0) b.vel = (deltaRot / dt) * 16;
+
+    rotationRef.current = { y: rotationRef.current.y + deltaRot };
+
+    b.lastX = clientX;
+    b.lastTime = now;
+    e.preventDefault();
+  }, []);
+
+  const onPointerUp = useCallback(() => {
+    isDraggingRef.current = false;
+    setIsDraggingState(false);
+
+    const b = buf.current;
+    const curr = rotationRef.current.y;
+    const nearest = Math.round(curr / 360) * 360;
+    const dist = Math.abs(curr - nearest);
+
+    if (b.didMove) {
+      suppressClose.current = true;
+      setTimeout(() => { suppressClose.current = false; }, 80);
+    }
+
+    if (!b.didMove) {
+      b.mode = 'idle';
+    } else if (dist <= 10) {
+      b.targetY = nearest;
+      b.snapVel = 0;
+      b.mode = 'snap';
+      startRenderLoop();
+    } else if (Math.abs(b.vel) < 0.25) {
+      b.targetY = nearest;
+      b.snapVel = 0;
+      b.mode = 'snap';
+      startRenderLoop();
+    } else {
+      b.mode = 'inertia';
+      startRenderLoop();
+    }
+  }, []);
 
   async function swapToRelated(id) {
     if (loadingRelatedId) return;
@@ -152,72 +242,17 @@ export default function ImageLightbox({
       });
       setActiveIndex(0);
       rotationRef.current = { y: 0 };
+      buf.current = { vel: 0, lastX: 0, lastTime: 0, didMove: false, targetY: null, snapVel: 0, mode: 'idle', _tilt: 0 };
       stopAnim();
-      applyTransform(false, 0);
+      const el = flipCardRef.current;
+      if (el) {
+        el.style.transition = 'transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        el.style.transform = 'perspective(1400px) rotateY(0deg) scale(1)';
+      }
     } finally {
       setLoadingRelatedId(null);
     }
   }
-
-  const onPointerDown = useCallback((e) => {
-    stopAnim();
-    setIsDragging(true);
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const p = physics.current;
-    p.lastX = clientX;
-    p.lastTime = performance.now();
-    p.vel = 0;
-    p.didMove = false;
-    suppressClose.current = false;
-    applyTransform(true, 0);
-    e.preventDefault();
-  }, [stopAnim]);
-
-  const onPointerMove = useCallback((e) => {
-    if (!isDragging) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const now = performance.now();
-    const p = physics.current;
-
-    const dx = clientX - p.lastX;
-    const dt = now - p.lastTime;
-    const sensitivity = 0.40;
-    const deltaY = dx * sensitivity;
-
-    if (Math.abs(dx) > 2) p.didMove = true;
-    if (dt > 0) p.vel = (deltaY / dt) * 16;
-
-    const next = { y: rotationRef.current.y + deltaY };
-    rotationRef.current = { y: next.y };
-    applyTransform(true, p.vel);
-
-    p.lastX = clientX;
-    p.lastTime = now;
-    e.preventDefault();
-  }, [isDragging]);
-
-  const onPointerUp = useCallback(() => {
-    setIsDragging(false);
-    const p = physics.current;
-    const curr = rotationRef.current.y;
-    const nearest = Math.round(curr / 360) * 360;
-    const dist = Math.abs(curr - nearest);
-
-    if (p.didMove) {
-      suppressClose.current = true;
-      setTimeout(() => { suppressClose.current = false; }, 80);
-    }
-
-    if (!p.didMove) {
-      applyTransform(false, 0);
-    } else if (dist <= 12) {
-      startSnap(nearest);
-    } else if (Math.abs(p.vel) < 0.3) {
-      startSnap(nearest);
-    } else {
-      startInertia();
-    }
-  }, [startInertia, startSnap]);
 
   useEffect(() => {
     function onKey(ev) { if (ev.key === 'Escape') onClose(); }
@@ -229,14 +264,14 @@ export default function ImageLightbox({
   }, [onClose, stopAnim]);
 
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isDraggingRef.current) return;
     const preventScroll = (e) => e.preventDefault();
     window.addEventListener('touchmove', preventScroll, { passive: false });
     return () => window.removeEventListener('touchmove', preventScroll);
-  }, [isDragging]);
+  }, [isDraggingState]);
 
   useEffect(() => {
-    if (!isDragging) return;
+    if (!isDraggingState) return;
     window.addEventListener('mousemove', onPointerMove);
     window.addEventListener('mouseup', onPointerUp);
     window.addEventListener('touchmove', onPointerMove, { passive: false });
@@ -247,19 +282,9 @@ export default function ImageLightbox({
       window.removeEventListener('touchmove', onPointerMove);
       window.removeEventListener('touchend', onPointerUp);
     };
-  }, [isDragging, onPointerMove, onPointerUp]);
+  }, [isDraggingState, onPointerMove, onPointerUp]);
 
-  // Initial transform on mount
-  useEffect(() => {
-    applyTransform(false, 0);
-  }, []);
-
-  // Re-apply when image changes (different card aspect may want fresh shadow)
-  useEffect(() => {
-    applyTransform(isDragging, physics.current.vel);
-  }, [activeSrc, isDragging]);
-
-  const cursor = isDragging ? 'grabbing' : 'grab';
+  const cursor = isDraggingState ? 'grabbing' : 'grab';
 
   function handleBackdropClick() {
     if (suppressClose.current) return;
@@ -275,7 +300,7 @@ export default function ImageLightbox({
           onMouseDown={onPointerDown}
           onTouchStart={onPointerDown}
         >
-          <div ref={flipCardRef} className="flip-card">
+          <div ref={flipCardRef} className="flip-card" style={{ willChange: 'transform' }}>
             <div className="flip-card-front">
               <img
                 src={activeSrc}
