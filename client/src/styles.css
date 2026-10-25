@@ -361,13 +361,30 @@ input[type="checkbox"] { width: auto; }
   animation: lightboxPopIn 0.4s ease-out;
   text-align: center;
 }
-.lightbox-3d-card img {
+.flip-card {
+  position: relative;
+  width: fit-content;
+  margin: 0 auto;
   transform-style: preserve-3d;
-  box-shadow: 12px 10px 30px rgba(0,0,0,0.5);
+}
+.flip-card-front,
+.flip-card-back {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-card-front img,
+.flip-card-back img {
   max-width: 90vw;
   max-height: 78vh;
   object-fit: contain;
   border-radius: 6px;
+  box-shadow: 12px 10px 30px rgba(0,0,0,0.5);
+  display: block;
+}
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
 }
 .lightbox-hint {
   color: rgba(255,255,255,0.55);
@@ -387,6 +404,7 @@ input[type="checkbox"] { width: auto; }
   align-items: center;
   gap: 0.75rem;
   max-width: 95vw;
+  padding-top: 3rem;
 }
 .lightbox-related {
   width: 100%;

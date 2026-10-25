@@ -3,11 +3,12 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 /*
  * Interactive 3D card spinner for the deck/lightbox view.
  * Grab the image horizontally to spin around the Y axis.
+ * Pokemon cards show a real card-back design when spun around.
  * Shows a strip of related (same-name) cards below the main image.
  * If released within 10° of front-facing, snaps smoothly back.
  * Only closes when you do a clean click-release on the dark backdrop.
  */
-export default function ImageLightbox({ src, alt, images = [], onClose, cardId, related = [], onNavigate }) {
+export default function ImageLightbox({ src, alt, images = [], onClose, cardId, related = [], onNavigate, pokeBack = false }) {
   const rafRef = useRef(null);
   const suppressClose = useRef(false);
 
@@ -127,8 +128,14 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
       setTimeout(() => { suppressClose.current = false; }, 60);
     }
 
-    if (dist <= 10) startSnap(nearest);
-    else startInertia();
+    if (dist <= 10) {
+      startSnap(nearest);
+    } else if (Math.abs(p.vel) < p.minVel) {
+      // Released too slowly to carry inertia — snap to nearest front-facing rotation
+      startSnap(nearest);
+    } else {
+      startInertia();
+    }
   }, [startInertia, startSnap]);
 
   useEffect(() => {
@@ -168,6 +175,10 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
     onClose();
   }
 
+  // Normalize rotation to 0-360 for deciding which face is visible
+  const normY = ((rotation.y % 360) + 360) % 360;
+  const showBackFace = pokeBack && (normY > 90 && normY < 270);
+
   return (
     <div className="camera-modal lightbox-modal" onClick={handleBackdropClick}>
       <div className="lightbox-layout" onClick={(e) => e.stopPropagation()}>
@@ -177,18 +188,38 @@ export default function ImageLightbox({ src, alt, images = [], onClose, cardId, 
           onMouseDown={onPointerDown}
           onTouchStart={onPointerDown}
         >
-          <img
-            className="lightbox-img"
-            src={activeSrc}
-            alt={activeAlt}
-            draggable={false}
+          <div
+            className="flip-card"
             style={{
-              transform: `perspective(1200px) rotateY(${rotation.y.toFixed(2)}deg)`,
+              transform: `rotateY(${rotation.y.toFixed(2)}deg)`,
               transition: isDragging ? 'none' : 'transform 0.1s ease-out',
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
             }}
-          />
+          >
+            <div className="flip-card-front">
+              <img
+                src={activeSrc}
+                alt={activeAlt}
+                draggable={false}
+                style={{
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                }}
+              />
+            </div>
+            {pokeBack && (
+              <div className="flip-card-back">
+                <img
+                  src="/card-back.svg"
+                  alt="Card back"
+                  draggable={false}
+                  style={{
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                  }}
+                />
+              </div>
+            )}
+          </div>
           <p className="lightbox-hint">{isDragging ? '' : 'Click & drag to spin'}</p>
         </div>
 

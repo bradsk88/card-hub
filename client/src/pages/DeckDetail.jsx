@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import ImageLightbox from '../components/ImageLightbox.jsx';
 import { api } from '../api.js';
 import { useLanguage } from '../i18n.jsx';
 
 export default function DeckDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { t } = useLanguage();
   const [deck, setDeck] = useState(null);
   const [allCards, setAllCards] = useState([]);
   const [addCardId, setAddCardId] = useState('');
   const [lightbox, setLightbox] = useState(null);
+  const [lightboxRelated, setLightboxRelated] = useState([]);
 
   function load() {
     api.getDeck(id).then(setDeck);
@@ -29,6 +31,18 @@ export default function DeckDetail() {
   async function handleRemove(deckCardId) {
     await api.removeCardFromDeck(id, deckCardId);
     load();
+  }
+
+  async function openLightbox(card) {
+    const related = await api.similarCards(card.id).catch(() => []);
+    setLightboxRelated(related);
+    setLightbox({
+      src: card.image,
+      alt: card.player_or_character || card.set_name,
+      cardId: card.id,
+      pokeBack: /Pokemon/i.test(card.sport_or_game || ''),
+      images: card.images || [],
+    });
   }
 
   if (!deck) return <p>{t('loading')}</p>;
@@ -74,7 +88,7 @@ export default function DeckDetail() {
           <h2>Deck Visual</h2>
           <div className="deck-card-grid">
             {cardsWithImage.map((c) => (
-              <div key={c.deck_card_id} className="deck-card-thumb" onClick={() => setLightbox({ src: c.image, alt: c.player_or_character || c.set_name })}>
+              <div key={c.deck_card_id} className="deck-card-thumb" onClick={() => openLightbox(c)}>
                 {c.image && <img src={c.image} alt={c.player_or_character || c.set_name} loading="lazy" />}
                 {c.deck_quantity > 1 && <span className="deck-card-qty">×{c.deck_quantity}</span>}
               </div>
@@ -113,7 +127,18 @@ export default function DeckDetail() {
         </tbody>
       </table>
 
-      {lightbox && <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />}
+      {lightbox && (
+        <ImageLightbox
+          src={lightbox.src}
+          alt={lightbox.alt}
+          images={lightbox.images}
+          onClose={() => setLightbox(null)}
+          cardId={lightbox.cardId}
+          related={lightboxRelated}
+          pokeBack={lightbox.pokeBack}
+          onNavigate={(cid) => { setLightbox(null); navigate(`/collection/${cid}`); }}
+        />
+      )}
     </div>
   );
 }
