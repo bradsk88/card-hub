@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { api } from '../api.js';
 
 /*
  * Polished interactive 3D card spinner.
@@ -11,33 +12,46 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
  *  - Grab feedback: card lifts and scales up
  *  - No arbitrary idle timers; snap only on release near a face
  *  - Pokemon cards show real card-back when spun past 90°
+ *  - Clicking a related card swaps it into the main slot
  */
 export default function ImageLightbox({
   src,
   alt,
-  images = [],
+  images: initialImages = [],
   onClose,
-  cardId,
-  related = [],
+  cardId: initialCardId,
+  related: initialRelated = [],
   onNavigate,
-  pokeBack = false,
+  pokeBack: initialPokeBack = false,
 }) {
   const rafRef = useRef(null);
   const suppressClose = useRef(false);
 
-  const initialIndex = images.length > 0
-    ? Math.max(0, images.findIndex((img) => `/images/${img.filename}` === src))
-    : 0;
-  const [activeIndex, setActiveIndex] = useState(initialIndex);
-  const active = images[activeIndex] || null;
-  const activeSrc = active ? `/images/${active.filename}` : src;
-  const activeAlt = active ? active.side : alt;
+  // Swapped-card state: clicking a related card loads it into the main slot
+  const [swapped, setSwapped] = useState(null);
+  const cardId = swapped?.cardId ?? initialCardId;
+  const cardImages = swapped?.images ?? initialImages;
+  const related = swapped?.related ?? initialRelated;
+  const pokeBack = swapped?.pokeBack ?? initialPokeBack;
+  const baseImage = swapped?.src ?? src;
+  const baseAlt = swapped?.alt ?? alt;
+
+  const allImages = cardImages.length > 0 ? cardImages : [{ filename: baseImage.replace('/images/', ''), side: 'front' }];
+  const initialIndex = swapped
+    ? 0
+    : allImages.findIndex((img) => `/images/${img.filename}` === baseImage) ?? 0;
+
+  const [activeIndex, setActiveIndex] = useState(Math.max(0, initialIndex));
+  const active = allImages[activeIndex] || allImages[0] || null;
+  const activeSrc = active ? `/images/${active.filename}` : baseImage;
+  const activeAlt = active ? active.side : baseAlt;
 
   const [rotation, setRotation] = useState({ y: 0 });
   const rotationRef = useRef({ y: 0 });
   useEffect(() => { rotationRef.current = rotation; }, [rotation]);
 
   const [isDragging, setIsDragging] = useState(false);
+  const [loadingRelatedId, setLoadingRelatedId] = useState(null);
 
   const physics = useRef({
     vel: 0,
@@ -53,7 +67,6 @@ export default function ImageLightbox({
     }
   }, []);
 
-  // Spring snap: Hooke's law with damping for a satisfying settle
   const startSnap = useCallback((targetY) => {
     stopAnim();
     const STIFFNESS = 0.10;
@@ -78,7 +91,6 @@ export default function ImageLightbox({
     rafRef.current = requestAnimationFrame(loop);
   }, [stopAnim]);
 
-  // Heavier inertia: cards feel weightier than the old 0.96
   const startInertia = useCallback(() => {
     stopAnim();
     const FRICTION = 0.92;
@@ -87,7 +99,6 @@ export default function ImageLightbox({
       const p = physics.current;
       if (Math.abs(p.vel) < MIN_VEL) {
         p.vel = 0;
-        // Inertia finished — snap to nearest face
         const nearest = Math.round(rotationRef.current.y / 360) * 360;
         startSnap(nearest);
         return;
@@ -100,6 +111,34 @@ export default function ImageLightbox({
     };
     rafRef.current = requestAnimationFrame(loop);
   }, [stopAnim, startSnap]);
+
+  async function swapToRelated(id) {
+    if (loadingRelatedId) return;
+    setLoadingRelatedId(id);
+    try {
+      const [card, similar] = await Promise.all([
+        api.getCard(id),
+        api.similarCards(id),
+      ]);
+      if (!card) return;
+      const imgs = card.images || [];
+      const first = imgs[0];
+      setSwapped({
+        cardId: id,
+        images: imgs,
+        related: similar,
+        src: first ? `/images/${first.filename}` : src,
+        alt: card.player_or_character || card.set_name || '',
+        pokeBack: /Pokemon/i.test(card.sport_or_game || ''),
+      });
+      setActiveIndex(0);
+      setRotation({ y: 0 });
+      rotationRef.current = { y: 0 };
+      stopAnim();
+    } finally {
+      setLoadingRelatedId(null);
+    }
+  }
 
   const onPointerDown = useCallback((e) => {
     stopAnim();
@@ -151,11 +190,10 @@ export default function ImageLightbox({
     }
 
     if (!p.didMove) {
-      // Clean click, no drag — leave rotation alone
+      // Clean click, no drag
     } else if (dist <= 12) {
       startSnap(nearest);
     } else if (Math.abs(p.vel) < 0.3) {
-      // Too slow to throw — snap to nearest face
       startSnap(nearest);
     } else {
       startInertia();
@@ -202,14 +240,11 @@ export default function ImageLightbox({
   const normY = ((rotation.y % 360) + 360) % 360;
   const showBackFace = pokeBack && (normY > 90 && normY < 270);
 
-  // Velocity-based X tilt: fast throws make the card lean into the motion
-  // Max ±8°, fades out as velocity drops
   const vel = physics.current.vel;
   const tiltX = isDragging
     ? Math.max(-8, Math.min(8, vel * 1.5))
     : Math.max(-4, Math.min(4, vel * 1.2));
 
-  // Dynamic shadow based on rotation
   const shadowAngle = (normY - 180) * (Math.PI / 180);
   const shadowX = -Math.sin(shadowAngle) * 24;
   const shadowBlur = 24 + Math.abs(Math.sin(normY * Math.PI / 180)) * 20;
@@ -234,31 +269,21 @@ export default function ImageLightbox({
             }}
           >
             <div className="flip-card-front">
-              <img
-                src={activeSrc}
-                alt={activeAlt}
-                draggable={false}
-                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
-              />
+              <img src={activeSrc} alt={activeAlt} draggable={false} style={{ userSelect: 'none', WebkitUserSelect: 'none' }} />
             </div>
             {pokeBack && (
               <div className="flip-card-back">
-                <img
-                  src="/card-back.svg"
-                  alt="Card back"
-                  draggable={false}
-                  style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
-                />
+                <img src="/card-back.svg" alt="Card back" draggable={false} style={{ userSelect: 'none', WebkitUserSelect: 'none' }} />
               </div>
             )}
           </div>
         </div>
 
-        {images.length > 1 && (
+        {allImages.length > 1 && (
           <div className="lightbox-image-tabs">
-            {images.map((img, i) => (
+            {allImages.map((img, i) => (
               <button
-                key={img.id}
+                key={img.id || img.filename}
                 className={`lightbox-tab ${i === activeIndex ? 'active' : ''}`}
                 onClick={() => setActiveIndex(i)}
                 title={img.side}
@@ -275,18 +300,18 @@ export default function ImageLightbox({
             <p className="lightbox-related-label">Other versions in collection:</p>
             <div className="lightbox-related-strip">
               {related.filter((r) => r.id !== cardId).map((r) => (
-                <div key={r.id} className="lightbox-related-card">
+                <div key={r.id} className={`lightbox-related-card ${loadingRelatedId === r.id ? 'loading' : ''}`}>
                   {r.image ? (
                     <img
                       src={r.image}
                       alt={r.player_or_character || r.set_name}
                       loading="lazy"
-                      onClick={() => { onClose(); onNavigate(r.id); }}
+                      onClick={() => swapToRelated(r.id)}
                     />
                   ) : (
-                    <div className="lightbox-related-noimg">?</div>
+                    <div className="lightbox-related-noimg" onClick={() => swapToRelated(r.id)}>?</div>
                   )}
-                  <button className="btn small" onClick={() => onNavigate(r.id)}>View</button>
+                  <button className="btn small" onClick={() => onNavigate(r.id)}>View Detail</button>
                 </div>
               ))}
             </div>

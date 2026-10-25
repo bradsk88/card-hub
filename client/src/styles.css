@@ -459,6 +459,13 @@ input[type="checkbox"] { width: auto; }
   font-size: 0.7rem;
   padding: 0.25rem 0.5rem;
 }
+.lightbox-related-card.loading {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.lightbox-related-card.loading .btn.small::after {
+  content: '…';
+}
 
 .lightbox-image-tabs {
   display: flex;
