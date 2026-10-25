@@ -2,17 +2,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '../api.js';
 
 /*
- * Polished interactive 3D card spinner.
- *
- * Conventions followed:
- *  - Flat Y-axis rotation only (cards spin on a vertical axis)
- *  - Velocity-based X tilt during throws (bottom tips into the motion)
- *  - Spring physics for face-snaps (slight overshoot then settle)
- *  - Dynamic shadow follows rotation angle
- *  - Grab feedback: card lifts and scales up
- *  - No arbitrary idle timers; snap only on release near a face
- *  - Pokemon cards show real card-back when spun past 90°
- *  - Clicking a related card swaps it into the main slot
+ * Smooth 3D card spinner — transforms are written directly to the DOM
+ * during drag/animation to avoid React re-render jitter.
  */
 export default function ImageLightbox({
   src,
@@ -26,8 +17,8 @@ export default function ImageLightbox({
 }) {
   const rafRef = useRef(null);
   const suppressClose = useRef(false);
+  const flipCardRef = useRef(null);
 
-  // Swapped-card state: clicking a related card loads it into the main slot
   const [swapped, setSwapped] = useState(null);
   const cardId = swapped?.cardId ?? initialCardId;
   const cardImages = swapped?.images ?? initialImages;
@@ -36,20 +27,20 @@ export default function ImageLightbox({
   const baseImage = swapped?.src ?? src;
   const baseAlt = swapped?.alt ?? alt;
 
-  const allImages = cardImages.length > 0 ? cardImages : [{ filename: baseImage.replace('/images/', ''), side: 'front' }];
-  const initialIndex = swapped
-    ? 0
-    : allImages.findIndex((img) => `/images/${img.filename}` === baseImage) ?? 0;
+  const allImages = cardImages.length > 0
+    ? cardImages
+    : [{ filename: baseImage.replace('/images/', ''), side: 'front' }];
 
-  const [activeIndex, setActiveIndex] = useState(Math.max(0, initialIndex));
+  const [activeIndex, setActiveIndex] = useState(
+    swapped
+      ? 0
+      : Math.max(0, allImages.findIndex((img) => `/images/${img.filename}` === baseImage))
+  );
   const active = allImages[activeIndex] || allImages[0] || null;
   const activeSrc = active ? `/images/${active.filename}` : baseImage;
   const activeAlt = active ? active.side : baseAlt;
 
-  const [rotation, setRotation] = useState({ y: 0 });
   const rotationRef = useRef({ y: 0 });
-  useEffect(() => { rotationRef.current = rotation; }, [rotation]);
-
   const [isDragging, setIsDragging] = useState(false);
   const [loadingRelatedId, setLoadingRelatedId] = useState(null);
 
@@ -67,6 +58,34 @@ export default function ImageLightbox({
     }
   }, []);
 
+  /* ── Direct DOM transform helper (no React state) ── */
+  function applyTransform(dragging, overrideVel) {
+    const el = flipCardRef.current;
+    if (!el) return;
+
+    const y = rotationRef.current.y;
+    const normY = ((y % 360) + 360) % 360;
+    const vel = overrideVel !== undefined ? overrideVel : physics.current.vel;
+    const tiltX = dragging
+      ? Math.max(-8, Math.min(8, vel * 1.5))
+      : Math.max(-4, Math.min(4, vel * 1.2));
+
+    const shadowAngle = (normY - 180) * (Math.PI / 180);
+    const shadowX = -Math.sin(shadowAngle) * 24;
+    const shadowBlur = 24 + Math.abs(Math.sin(normY * Math.PI / 180)) * 20;
+    const shadowOpacity = 0.45 - Math.abs(Math.sin(normY * Math.PI / 180)) * 0.15;
+    const shadow = `${shadowX.toFixed(1)}px 12px ${shadowBlur.toFixed(1)}px rgba(0,0,0,${shadowOpacity.toFixed(2)})`;
+
+    const scale = dragging ? 1.05 : 1;
+    const transition = dragging
+      ? 'none'
+      : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.35s ease';
+
+    el.style.transition = transition;
+    el.style.transform = `perspective(1200px) rotateY(${y.toFixed(2)}deg) rotateX(${tiltX.toFixed(2)}deg) scale(${scale})`;
+    el.style.boxShadow = shadow;
+  }
+
   const startSnap = useCallback((targetY) => {
     stopAnim();
     const STIFFNESS = 0.10;
@@ -77,15 +96,15 @@ export default function ImageLightbox({
       const d = targetY - curr;
       if (Math.abs(d) < 0.05 && Math.abs(vel) < 0.05) {
         rotationRef.current = { y: targetY };
-        setRotation({ y: targetY });
+        applyTransform(false, 0);
         rafRef.current = null;
         return;
       }
       vel += d * STIFFNESS;
       vel *= DAMPING;
       const next = { y: curr + vel };
-      rotationRef.current = next;
-      setRotation(next);
+      rotationRef.current = { y: next.y };
+      applyTransform(false, vel);
       rafRef.current = requestAnimationFrame(loop);
     };
     rafRef.current = requestAnimationFrame(loop);
@@ -104,8 +123,8 @@ export default function ImageLightbox({
         return;
       }
       const next = { y: rotationRef.current.y + p.vel };
-      rotationRef.current = next;
-      setRotation(next);
+      rotationRef.current = { y: next.y };
+      applyTransform(false, p.vel);
       p.vel *= FRICTION;
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -132,9 +151,9 @@ export default function ImageLightbox({
         pokeBack: /Pokemon/i.test(card.sport_or_game || ''),
       });
       setActiveIndex(0);
-      setRotation({ y: 0 });
       rotationRef.current = { y: 0 };
       stopAnim();
+      applyTransform(false, 0);
     } finally {
       setLoadingRelatedId(null);
     }
@@ -150,6 +169,7 @@ export default function ImageLightbox({
     p.vel = 0;
     p.didMove = false;
     suppressClose.current = false;
+    applyTransform(true, 0);
     e.preventDefault();
   }, [stopAnim]);
 
@@ -165,12 +185,11 @@ export default function ImageLightbox({
     const deltaY = dx * sensitivity;
 
     if (Math.abs(dx) > 2) p.didMove = true;
-
     if (dt > 0) p.vel = (deltaY / dt) * 16;
 
     const next = { y: rotationRef.current.y + deltaY };
-    rotationRef.current = next;
-    setRotation(next);
+    rotationRef.current = { y: next.y };
+    applyTransform(true, p.vel);
 
     p.lastX = clientX;
     p.lastTime = now;
@@ -190,7 +209,7 @@ export default function ImageLightbox({
     }
 
     if (!p.didMove) {
-      // Clean click, no drag
+      applyTransform(false, 0);
     } else if (dist <= 12) {
       startSnap(nearest);
     } else if (Math.abs(p.vel) < 0.3) {
@@ -230,26 +249,22 @@ export default function ImageLightbox({
     };
   }, [isDragging, onPointerMove, onPointerUp]);
 
+  // Initial transform on mount
+  useEffect(() => {
+    applyTransform(false, 0);
+  }, []);
+
+  // Re-apply when image changes (different card aspect may want fresh shadow)
+  useEffect(() => {
+    applyTransform(isDragging, physics.current.vel);
+  }, [activeSrc, isDragging]);
+
   const cursor = isDragging ? 'grabbing' : 'grab';
 
   function handleBackdropClick() {
     if (suppressClose.current) return;
     onClose();
   }
-
-  const normY = ((rotation.y % 360) + 360) % 360;
-  const showBackFace = pokeBack && (normY > 90 && normY < 270);
-
-  const vel = physics.current.vel;
-  const tiltX = isDragging
-    ? Math.max(-8, Math.min(8, vel * 1.5))
-    : Math.max(-4, Math.min(4, vel * 1.2));
-
-  const shadowAngle = (normY - 180) * (Math.PI / 180);
-  const shadowX = -Math.sin(shadowAngle) * 24;
-  const shadowBlur = 24 + Math.abs(Math.sin(normY * Math.PI / 180)) * 20;
-  const shadowOpacity = 0.45 - Math.abs(Math.sin(normY * Math.PI / 180)) * 0.15;
-  const dynamicShadow = `${shadowX.toFixed(1)}px 12px ${shadowBlur.toFixed(1)}px rgba(0,0,0,${shadowOpacity.toFixed(2)})`;
 
   return (
     <div className="camera-modal lightbox-modal" onClick={handleBackdropClick}>
@@ -260,20 +275,23 @@ export default function ImageLightbox({
           onMouseDown={onPointerDown}
           onTouchStart={onPointerDown}
         >
-          <div
-            className="flip-card"
-            style={{
-              transform: `perspective(1200px) rotateY(${rotation.y.toFixed(2)}deg) rotateX(${tiltX.toFixed(2)}deg) scale(${isDragging ? 1.05 : 1})`,
-              transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-              boxShadow: dynamicShadow,
-            }}
-          >
+          <div ref={flipCardRef} className="flip-card">
             <div className="flip-card-front">
-              <img src={activeSrc} alt={activeAlt} draggable={false} style={{ userSelect: 'none', WebkitUserSelect: 'none' }} />
+              <img
+                src={activeSrc}
+                alt={activeAlt}
+                draggable={false}
+                style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+              />
             </div>
             {pokeBack && (
               <div className="flip-card-back">
-                <img src="/card-back.svg" alt="Card back" draggable={false} style={{ userSelect: 'none', WebkitUserSelect: 'none' }} />
+                <img
+                  src="/card-back.svg"
+                  alt="Card back"
+                  draggable={false}
+                  style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+                />
               </div>
             )}
           </div>
